@@ -4,6 +4,7 @@ from colorama import Fore, Style
 import argparse
 
 SEARCH_TERM = ""
+QUIET = False
 
 regex_patterns = {
     "google_api": r"AIza[0-9A-Za-z-_]{35}",
@@ -72,16 +73,18 @@ def process_url(url, regex_patterns):
                 if pattern_name:
                     matching_contents.append((pattern_name, matched_content))
             if len(matching_contents) == 0:
-                print(f"[-] No matches found for {url}")
+                pass
             else:
-                print(f"[+] Found {len(matching_contents)} matche(s)")
+                if not QUIET:
+                    print(f"[+] Found matches: {len(matching_contents)}")
             return matching_contents
         else:
             print(f"[-] SwaggerHub API error: {response.status_code}, {response.text}")
             if response.status_code == 429:  # Too many requests
                 import time
 
-                print(f"[-] Backing off for ten seconds")
+                if not QUIET:
+                    print("[-] Backing off for ten seconds")
                 time.sleep(10)
     except Exception as e:
         print(f"Error processing URL {url}: {e}")
@@ -140,6 +143,9 @@ def print_colored(text, color):
 
 
 def main():
+    global SEARCH_TERM
+    global QUIET
+
     parser = argparse.ArgumentParser(
         description="AUTOMATED OSINT ON SWAGGERHUB",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -163,7 +169,9 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.quiet:
+    QUIET = args.quiet
+
+    if not QUIET:
         print_colored(
             """
          █▀▀ █ █ █▀█ █▀▀ █▀▀ █▀▀ █▀█ █▀▀ █▀█ █ █
@@ -172,6 +180,11 @@ def main():
               AUTOMATED OSINT ON SWAGGERHUB\n""",
             Fore.MAGENTA,
         )
+
+    if QUIET and not args.outfile:
+        print("[!] Quiet mode specified without --outfile")
+        print("[*] This will result in a bunch of useless API calls, exiting...")
+        return 0
 
     SEARCH_TERM = args.searchterm
     result_urls = get_urls(args.searchterm)
@@ -195,27 +208,32 @@ def main():
 
         for future in as_completed(future_to_url):
             url = future_to_url[future]
-            print(f"[*] Searching for matches in {url}")
+            if not QUIET:
+                print(f"[*] Searching for matches in {url}")
 
             try:
                 matching_contents = future.result()
                 if matching_contents:
                     for pattern_name, content in matching_contents:
-                        result_data["matches"].append([pattern_name, content])
+                        result_data["matches"].append([url, pattern_name, content])
                 else:
-                    print("[!] No matches found")
+                    pass
 
             except Exception as e:
                 print(f"Error processing URL {url}: {e}")
 
-    for result in result_data["matches"]:
-        print(f"[+] {result[0]}, {result[1]}")
+    if not QUIET:
+        print("Displaying results")
+        for result in result_data["matches"]:
+            print(f"{result[0]}, {result[1]}, {result[2]}")
 
-    if not args.quiet:
+    if not QUIET:
         print(
             "\nThanks for using SwaggerSpy! Consider following me on X, GitHub and LinkedIn: @UndeadSec, https://github.com/UndeadSec, https://linkedin.com/in/alissonmoretto\n",
             Fore.MAGENTA,
         )
+
+    print(f"[+] Completed with {len(result_data['matches'])} results")
 
     if args.outfile:
         with open(args.outfile, "w") as outfile:
